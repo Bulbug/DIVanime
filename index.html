@@ -20,6 +20,7 @@
     <span class="word"><b>DIV</b>Anime</span>
   </h1>
   <input id="search" type="search" placeholder="Search anime" aria-label="Search anime">
+  <button class="btn navbtn" id="randomBtn">Random</button>
   <button class="btn navbtn" id="listBtn">My Watchlist (<span id="count">0</span>)</button>
   <select id="theme" aria-label="Theme">
     <option value="night">Night</option>
@@ -31,9 +32,23 @@
   <button class="tab" data-tab="top" aria-pressed="true">Top</button>
   <button class="tab" data-tab="airing" aria-pressed="false">Airing now</button>
   <button class="tab" data-tab="upcoming" aria-pressed="false">Upcoming</button>
+  <select id="sort" aria-label="Sort by">
+    <option value="default">Sort: Default</option>
+    <option value="score">Highest score</option>
+    <option value="popularity">Most popular</option>
+    <option value="newest">Newest</option>
+    <option value="title">A to Z</option>
+  </select>
 </nav>
 <nav id="genres" aria-label="Genres"></nav>
 <main id="app"></main>
+<footer>
+  <p class="muted">Your watchlist and progress are saved in this browser only. Export them to back up or move to another device. Import adds to what you already have.</p>
+  <button class="btn small ghost" id="exportBtn">Export data</button>
+  <button class="btn small ghost" id="importBtn">Import data</button>
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
+  <p class="muted" id="dataMsg" role="status"></p>
+</footer>
 
 <script src="script.js"></script>
 </body>
