@@ -97,8 +97,18 @@ const OFFICIAL = {
 
 - HTML, CSS, JavaScript (vanilla)
 - [Jikan API](https://docs.api.jikan.moe) (unofficial MyAnimeList API) for the catalog, episodes, and details
-- [AniList GraphQL API](https://docs.anilist.co) for extra links to legal streaming platforms (no API key needed)
+- [AniList GraphQL API](https://docs.anilist.co) for extra links to legal streaming platforms, and as a backup when Jikan is down (no API key needed)
 - Google Fonts (Zen Maru Gothic)
+
+## Backup mode
+
+Jikan is a free service that sometimes goes down. When it stops answering, DIVAnime switches to **AniList** by itself and shows a notice at the top. These keep working in backup mode: the catalog (tabs, search, genres, sorting, Load more), suggestions, Random, watch pages, and the episode list. What is missing is episode titles and air dates, because AniList only knows how many episodes there are. DIVAnime asks Jikan again after a minute, or right away when you press **Try again**.
+
+## Troubleshooting
+
+- **"Couldn't reach the anime data service":** this only shows when AniList does not answer either. The page checks for you. If it says your internet works but Jikan isn't answering, Jikan is probably down or busy. Wait a minute and press **Try again**. If it keeps happening, it may be blocked on your network (school, work, VPN, or an ad blocker). Try another network or turn the blocker off for this page.
+- **Still stuck:** open **Technical details** in the error box (or press F12, then the Console tab) and copy the message when asking for help.
+- Jikan is a free service and sometimes goes down or limits requests. DIVAnime retries by itself a few times first.
 
 ## Credits
 

@@ -154,3 +154,11 @@ footer .btn { margin-right:8px; }
   .aniep.nothumb { grid-template-columns:1fr; }
   .aniep.nothumb .epbtns { grid-column:1; }
 }
+
+/* ---- Error details and missing posters ---- */
+.errdetails { margin-top:12px; font-size:.85rem; }
+.errdetails pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:6px 0 0; }
+.errorbox .btn { margin-right:8px; }
+.noposter { width:100%; aspect-ratio:2/3; background:var(--line); }
+
+.synopsis { white-space:pre-line; }

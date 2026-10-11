@@ -8,16 +8,50 @@ let currentGenre = null; // MAL genre ID as a string, or null for "no filter"
 
 // getPage returns the full response (data + pagination info). getJSON returns just the data.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function getPage(path, retried = false) {
-  const res = await fetch(API + path);
-  // 429 = "too many requests": wait a moment and try once more
-  if (res.status === 429 && !retried) { await sleep(1500); return getPage(path, true); }
+
+// BACKUP MODE: if Jikan stops answering, DIVAnime switches to AniList for the catalog, details, and more.
+let jikanDownUntil = 0;       // while now is before this time, we skip Jikan and use AniList straight away
+let catalogSource = "jikan";  // which service gave page 1 of the current list ("jikan" or "anilist")
+let genreSource = "jikan";    // which service gave the genre buttons
+let backupNoticeShown = false;
+
+// "Is the service down?" (as opposed to "we asked for something that does not exist")
+const isServiceDown = e => !!e && (e.network || [429, 500, 502, 503, 504].includes(e.status));
+// Only some failures mean "stop asking Jikan for a minute". One broken title (500) does not.
+function markDown(e) {
+  if (e && (e.network || [429, 502, 503, 504].includes(e.status))) jikanDownUntil = Date.now() + 60000;
+}
+function showBackupNotice() {
+  if (backupNoticeShown) return;
+  backupNoticeShown = true;
+  showBanner("The main anime data service (Jikan) isn't answering, so DIVAnime is using AniList as a backup. Some details, like episode titles, may be missing.");
+}
+async function getPage(path, attempt = 0) {
+  let res;
+  try {
+    res = await fetch(API + path);
+  } catch (e) {
+    // fetch only fails like this when there is NO usable answer at all: no internet, a blocked site,
+    // or an error page from a busy server. Wait a little and try again (up to 2 more times).
+    if (attempt < 2 && navigator.onLine) { await sleep(1200 * (attempt + 1)); return getPage(path, attempt + 1); }
+    const err = new Error("No answer from " + API + " (" + (e && e.message ? e.message : "network error") + ")");
+    err.network = true; // we mark real network problems ourselves, so other bugs are not mistaken for them
+    throw err;
+  }
+  // 429 = too many requests, 502/503/504 = the service is busy: wait and try again
+  if ([429, 502, 503, 504].includes(res.status) && attempt < 2) { await sleep(1500 * (attempt + 1)); return getPage(path, attempt + 1); }
   if (!res.ok) {
     const err = new Error("Request failed: " + res.status);
     err.status = res.status;
     throw err;
   }
-  return res.json();
+  try {
+    return await res.json();
+  } catch (e) {
+    const err = new Error("The service sent an answer we could not read");
+    err.status = res.status;
+    throw err;
+  }
 }
 async function getJSON(path) {
   return (await getPage(path)).data;
@@ -25,21 +59,56 @@ async function getJSON(path) {
 
 // FRIENDLY ERRORS: say what went wrong in plain words, and always offer a way forward
 function friendlyError(e) {
-  if (!navigator.onLine || e instanceof TypeError) return "Can't reach the anime service. Check your internet connection.";
+  if (!navigator.onLine) return "You appear to be offline. Check your internet connection.";
+  if (e && e.network) return "Couldn't reach the anime data service.";
   if (e && e.status === 429) return "Too many requests right now. Wait a few seconds and try again.";
   if (e && e.status === 404) return "That anime could not be found.";
+  if (e && e.status >= 500) return "The anime data service (Jikan) is having problems right now. Try again in a minute.";
   return "Something went wrong while loading. Please try again.";
+}
+
+// When the data service does not answer, find out WHY: is it your internet, or only the service?
+// Jikan and AniList are different services, so if AniList answers but Jikan does not, your internet is fine.
+async function diagnoseConnection() {
+  const check = async fn => {
+    try {
+      await Promise.race([fn(), sleep(6000).then(() => { throw new Error("timeout"); })]);
+      return true;
+    } catch (e) { return false; }
+  };
+  const jikan = await check(async () => { const r = await fetch(API + "/top/anime?limit=1"); if (!r.ok) throw new Error("status " + r.status); });
+  const ani = await check(async () => {
+    const r = await fetch(ANILIST_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: "{ __typename }" }) });
+    if (!r.ok) throw new Error("status " + r.status);
+  });
+  let message;
+  if (jikan) message = "The anime data service is answering again. Press Try again.";
+  else if (ani) message = "Your internet works, but the anime data service (Jikan) isn't answering. It may be down or busy, or blocked on your network (school, work, VPN, or an ad blocker). Try again in a minute.";
+  else message = "Can't reach the internet. Check your connection, VPN, firewall, or ad blocker.";
+  return { message, jikan, ani };
 }
 
 // Puts an error message with a "Try again" button (and an optional "Back" button) inside a container
 function showError(container, e, retryFn, backFn) {
+  console.error(e);
+  const details = `${e && e.name ? e.name : "Error"}: ${e && e.message ? e.message : e}${e && e.status ? " (HTTP " + e.status + ")" : ""}`;
   container.innerHTML = `<div class="errorbox" role="alert">
-    <p>${esc(friendlyError(e))}</p>
+    <p class="errtext">${esc(friendlyError(e))}</p>
     <button class="btn retry">Try again</button>
     ${backFn ? '<button class="btn ghost backbtn">Back</button>' : ""}
+    <details class="errdetails"><summary>Technical details</summary><pre>${esc(details)}</pre></details>
   </div>`;
-  container.querySelector(".retry").addEventListener("click", retryFn);
+  container.querySelector(".retry").addEventListener("click", () => { jikanDownUntil = 0; retryFn(); }); // ask Jikan again
   if (backFn) container.querySelector(".backbtn").addEventListener("click", backFn);
+
+  if (e && e.network && navigator.onLine) {
+    diagnoseConnection().then(result => {
+      const text = container.querySelector(".errtext");
+      const pre = container.querySelector(".errdetails pre");
+      if (text) text.textContent = result.message;
+      if (pre) pre.textContent += `\nJikan: ${result.jikan ? "answers" : "no answer"} | AniList: ${result.ani ? "answers" : "no answer"}`;
+    });
+  }
 }
 
 // A banner at the top of the page for messages that are not tied to one spot
@@ -57,6 +126,7 @@ function hideBanner() {
 window.addEventListener("offline", () => showBanner("You're offline. Some things won't load until you reconnect."));
 window.addEventListener("online", () => {
   hideBanner();
+  jikanDownUntil = 0;
   const retry = document.querySelector("#app .errorbox .retry"); // retry whatever failed
   if (retry) retry.click();
 });
@@ -109,10 +179,16 @@ function setWatched(id, eps) {
   catch (e) { /* storage blocked: it just won't be saved */ }
 }
 
+// Some titles have no poster, so never assume the image fields exist
+function posterOf(a, small = false) {
+  const jpg = a && a.images && a.images.jpg;
+  return (jpg && ((small && jpg.small_image_url) || jpg.image_url)) || "";
+}
+
 // RECENTLY VIEWED: the last 8 anime you opened, newest first, shown above the catalog.
 // Format: [ { id, title, image }, ... ]
 const RECENT_MAX = 8;
-const SAFE_IMAGE = /^https:\/\/cdn\.myanimelist\.net\/[\w\/.\-]+$/; // images must come from MyAnimeList's CDN
+const SAFE_IMAGE = /^https:\/\/(cdn\.myanimelist\.net|s\d+\.anilist\.co)\/[\w\/.\-%]+$/; // images must come from MyAnimeList's or AniList's image servers
 
 function loadRecent() {
   try {
@@ -124,7 +200,7 @@ function loadRecent() {
 }
 function addRecent(a) {
   const list = loadRecent().filter(x => x.id !== a.mal_id); // move to the front if already there
-  list.unshift({ id: a.mal_id, title: a.title, image: a.images.jpg.image_url });
+  list.unshift({ id: a.mal_id, title: a.title, image: posterOf(a) });
   try { localStorage.setItem("divanime-recent", JSON.stringify(list.slice(0, RECENT_MAX))); }
   catch (e) { /* storage blocked: it just won't be saved */ }
 }
@@ -240,7 +316,7 @@ function watchSkeleton() {
 function cardHTML(a) {
   return `
     <button class="card" data-id="${a.mal_id}">
-      <img src="${a.images.jpg.image_url}" alt="" loading="lazy">
+      ${safeUrl(posterOf(a)) ? `<img src="${safeUrl(posterOf(a))}" alt="" loading="lazy">` : '<div class="noposter"></div>'}
       <span>${esc(a.title)}</span>
     </button>`;
 }
@@ -258,7 +334,7 @@ async function showCatalog(query = "", page = 1) {
   savedView = null;
   if (page === 1) app.innerHTML = skeletonGrid();
   try {
-    let res = await getPage(buildPath(query, page));
+    let res = await fetchCatalog(query, page);
     if (myRequest !== requestId) return; // a newer request replaced this one
     let list = dropUnaired(res.data || []);
 
@@ -267,7 +343,7 @@ async function showCatalog(query = "", page = 1) {
     for (let extra = 0; extra < 5 && !list.length && res.pagination && res.pagination.has_next_page; extra++) {
       await sleep(400); // stay under Jikan's rate limit
       lastPage++;
-      res = await getPage(buildPath(query, lastPage));
+      res = await fetchCatalog(query, lastPage);
       if (myRequest !== requestId) return;
       list = dropUnaired(res.data || []);
     }
@@ -392,50 +468,54 @@ function updateResume() {
   document.getElementById("jumpBtn").addEventListener("click", () => row.scrollIntoView({ block: "center" }));
 }
 
+// One click listener and one change listener for the whole episode list (event delegation)
+function wireEpisodeList(list, id) {
+  list.addEventListener("click", e => {
+    const btn = e.target.closest(".playBtn");
+    const link = e.target.closest("a");
+    const row = e.target.closest(".ep");
+    if (!row || (!btn && !link)) return;
+
+    // Remember this episode as the last one opened, and move the "Last opened" mark
+    saveProgress(id, row.dataset.ep);
+    list.querySelectorAll(".ep.last").forEach(r => r.classList.remove("last"));
+    row.classList.add("last");
+    updateResume();
+
+    if (btn) {
+      document.getElementById("playerBox").innerHTML =
+        playerHTML(`https://www.youtube.com/embed/${encodeURIComponent(btn.dataset.yt)}`, "Episode " + btn.dataset.ep);
+      document.getElementById("playerNote").textContent = `Playing episode ${btn.dataset.ep} (official upload).`;
+      document.getElementById("playerBox").scrollIntoView({ block: "center" });
+    }
+  });
+
+  // Ticking a checkbox saves it as watched (or removes it)
+  list.addEventListener("change", e => {
+    const box = e.target.closest(".epcheck");
+    if (!box) return;
+    const row = box.closest(".ep");
+    const n = Number(row.dataset.ep);
+    const set = new Set(getWatched(id));
+    if (box.checked) set.add(n); else set.delete(n);
+    setWatched(id, [...set].sort((a, b) => a - b));
+    row.classList.toggle("done", box.checked);
+    updateProgress(id);
+  });
+}
+
 async function loadEpisodes(id, page) {
   const list = document.getElementById("epList");
   const more = document.getElementById("epMore");
   if (watchId !== id || !list) return; // you already left this page
   try {
-    const res = await getPage(`/anime/${id}/episodes?page=${page}`);
+    const res = await fetchEpisodes(id, page);
     if (watchId !== id || !document.getElementById("epList")) return;
     const eps = res.data || [];
     if (page === 1) {
       list.innerHTML = "";
       if (!eps.length) { list.innerHTML = '<li class="muted">No episode list available yet.</li>'; return; }
-      // One click listener for all Play and Details buttons (event delegation)
-      list.addEventListener("click", e => {
-        const btn = e.target.closest(".playBtn");
-        const link = e.target.closest("a");
-        const row = e.target.closest(".ep");
-        if (!row || (!btn && !link)) return;
-
-        // Remember this episode as the last one opened, and move the "Last opened" mark
-        saveProgress(id, row.dataset.ep);
-        list.querySelectorAll(".ep.last").forEach(r => r.classList.remove("last"));
-        row.classList.add("last");
-        updateResume();
-
-        if (btn) {
-          document.getElementById("playerBox").innerHTML =
-            playerHTML(`https://www.youtube.com/embed/${encodeURIComponent(btn.dataset.yt)}`, "Episode " + btn.dataset.ep);
-          document.getElementById("playerNote").textContent = `Playing episode ${btn.dataset.ep} (official upload).`;
-          document.getElementById("playerBox").scrollIntoView({ block: "center" });
-        }
-      });
-
-      // Ticking a checkbox saves it as watched (or removes it)
-      list.addEventListener("change", e => {
-        const box = e.target.closest(".epcheck");
-        if (!box) return;
-        const row = box.closest(".ep");
-        const n = Number(row.dataset.ep);
-        const set = new Set(getWatched(id));
-        if (box.checked) set.add(n); else set.delete(n);
-        setWatched(id, [...set].sort((a, b) => a - b));
-        row.classList.toggle("done", box.checked);
-        updateProgress(id);
-      });
+      wireEpisodeList(list, id);
     }
     const official = OFFICIAL[id];
     const lastEp = getProgress(id);
@@ -452,7 +532,7 @@ async function loadEpisodes(id, page) {
         loadEpisodes(id, page + 1);
       });
     } else {
-      more.innerHTML = "";
+      more.innerHTML = res.backup ? '<p class="muted">Episode titles are unavailable right now (backup mode).</p>' : "";
     }
   } catch (e) {
     if (watchId !== id || !document.getElementById("epList")) return;
@@ -477,7 +557,15 @@ async function loadEpisodes(id, page) {
 const ANILIST_URL = "https://graphql.anilist.co";
 const ANILIST_QUERY = `query ($idMal: Int) {
   Media(idMal: $idMal, type: ANIME) {
+    idMal
+    format
+    status
+    episodes
+    description
     averageScore
+    title { romaji english }
+    coverImage { large medium }
+    trailer { id site }
     nextAiringEpisode { episode airingAt }
     externalLinks { site url type }
     streamingEpisodes { title thumbnail url site }
@@ -485,19 +573,218 @@ const ANILIST_QUERY = `query ($idMal: Int) {
 }`;
 const aniCache = new Map(); // so going back and forth does not ask again
 
+// Sends one GraphQL request to AniList. Real network problems are marked with err.network.
+async function postAniList(query, variables) {
+  let res;
+  try {
+    res = await fetch(ANILIST_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ query, variables }),
+    });
+  } catch (e) {
+    const err = new Error("No answer from AniList (" + (e && e.message ? e.message : "network error") + ")");
+    err.network = true;
+    throw err;
+  }
+  if (res.status === 404) return null; // AniList does not know this one
+  if (!res.ok) {
+    const err = new Error("AniList failed: " + res.status);
+    err.status = res.status;
+    throw err;
+  }
+  const json = await res.json();
+  return json.data || null;
+}
+
 async function getAniList(malId) {
   if (aniCache.has(malId)) return aniCache.get(malId);
-  const res = await fetch(ANILIST_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify({ query: ANILIST_QUERY, variables: { idMal: Number(malId) } }),
-  });
-  if (res.status === 404) { aniCache.set(malId, null); return null; } // AniList does not know this title
-  if (!res.ok) throw new Error("AniList failed: " + res.status);
-  const json = await res.json();
-  const media = json.data && json.data.Media ? json.data.Media : null;
+  const data = await postAniList(ANILIST_QUERY, { idMal: Number(malId) });
+  const media = data && data.Media ? data.Media : null;
   aniCache.set(malId, media);
   return media;
+}
+
+// ---- Backup pieces: turn AniList answers into the same shape Jikan gives us ----
+const ANI_STATUS = { RELEASING: "Currently Airing", FINISHED: "Finished Airing", NOT_YET_RELEASED: "Not yet aired", CANCELLED: "Cancelled", HIATUS: "On Hiatus" };
+const ANI_SORT = { score: "SCORE_DESC", popularity: "POPULARITY_DESC", newest: "START_DATE_DESC", title: "TITLE_ROMAJI" };
+const CATALOG_QUERY = `query ($page: Int, $perPage: Int, $search: String, $genre: String, $sort: [MediaSort], $status: MediaStatus, $statusNot: MediaStatus) {
+  Page(page: $page, perPage: $perPage) {
+    pageInfo { hasNextPage }
+    media(type: ANIME, isAdult: false, search: $search, genre: $genre, sort: $sort, status: $status, status_not: $statusNot) {
+      idMal
+      title { romaji english }
+      coverImage { large medium }
+      status
+    }
+  }
+}`;
+
+function aniTitle(m, fallback) {
+  return (m.title && (m.title.romaji || m.title.english)) || fallback;
+}
+
+function animeFromAniListCard(m) {
+  return {
+    mal_id: m.idMal,
+    title: aniTitle(m, "Anime " + m.idMal),
+    images: { jpg: { image_url: (m.coverImage && m.coverImage.large) || "", small_image_url: (m.coverImage && m.coverImage.medium) || "" } },
+    status: ANI_STATUS[m.status] || "",
+  };
+}
+
+// AniList descriptions contain bits of HTML like <br>. Turn them into plain text.
+function cleanText(html) {
+  return String(html || "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").trim();
+}
+
+// A full "anime" object (like Jikan's /full) built from an AniList answer
+function animeFromAniList(media, id) {
+  const trailerOk = media.trailer && media.trailer.site === "youtube" && /^[\w-]{11}$/.test(media.trailer.id || "");
+  return {
+    mal_id: Number(id),
+    title: aniTitle(media, "Anime " + id),
+    images: { jpg: { image_url: (media.coverImage && media.coverImage.large) || "", small_image_url: (media.coverImage && media.coverImage.medium) || "" } },
+    synopsis: cleanText(media.description),
+    type: media.format ? String(media.format).replace(/_/g, " ") : "",
+    episodes: media.episodes || null,
+    score: Number.isFinite(media.averageScore) ? (media.averageScore / 10).toFixed(1) : null,
+    status: ANI_STATUS[media.status] || "",
+    trailer: trailerOk ? { embed_url: `https://www.youtube.com/embed/${media.trailer.id}` } : null,
+    streaming: (media.externalLinks || []).filter(l => l.type === "STREAMING").map(l => ({ name: l.site, url: l.url })),
+  };
+}
+
+// The name of the selected genre, the way AniList spells it
+function aniGenreName() {
+  const chip = genreBar.querySelector(`.chip[data-id="${currentGenre}"]`);
+  const name = chip ? chip.textContent.trim() : String(currentGenre);
+  return { Suspense: "Thriller" }[name] || name;
+}
+
+// The same list the catalog would show (tab, search, genre, sort), but asked from AniList
+async function getAniListCatalog(query, page) {
+  const vars = { page, perPage: 24 };
+  const tab = currentTab || "top";
+  let sort;
+  if (query) { vars.search = query; sort = ANI_SORT[currentSort] || "SEARCH_MATCH"; }
+  else if (currentGenre) { vars.genre = aniGenreName(); sort = ANI_SORT[currentSort] || "SCORE_DESC"; }
+  else {
+    if (tab === "airing") vars.status = "RELEASING";
+    if (tab === "upcoming") vars.status = "NOT_YET_RELEASED";
+    sort = ANI_SORT[currentSort] || (tab === "top" ? "SCORE_DESC" : "POPULARITY_DESC");
+  }
+  if (currentSort === "newest" && !vars.status) vars.statusNot = "NOT_YET_RELEASED"; // hide unaired titles
+  vars.sort = [sort];
+  const data = await postAniList(CATALOG_QUERY, vars);
+  const pageData = data && data.Page;
+  const media = pageData && pageData.media ? pageData.media : [];
+  return {
+    data: media.filter(m => m && Number.isInteger(m.idMal)).map(animeFromAniListCard), // our site works with MyAnimeList IDs
+    pagination: { has_next_page: !!(pageData && pageData.pageInfo && pageData.pageInfo.hasNextPage) },
+  };
+}
+
+// ---- The "ask Jikan first, AniList if Jikan is down" functions ----
+async function fetchCatalog(query, page) {
+  // Later pages must come from the same service as page 1, or the list would repeat or skip titles
+  const aniOnly = (page > 1 && catalogSource === "anilist") || (currentGenre && genreSource === "anilist");
+  const jikanOnly = page > 1 && catalogSource === "jikan";
+  let jikanError = null;
+  if (!aniOnly && (jikanOnly || Date.now() >= jikanDownUntil)) {
+    try {
+      const res = await getPage(buildPath(query, page));
+      if (page === 1) catalogSource = "jikan";
+      return res;
+    } catch (e) {
+      if (jikanOnly || !isServiceDown(e)) throw e;
+      markDown(e);
+      jikanError = e;
+    }
+  }
+  try {
+    const res = await getAniListCatalog(query, page);
+    if (page === 1) catalogSource = "anilist";
+    if (jikanError || Date.now() < jikanDownUntil) showBackupNotice();
+    return res;
+  } catch (e2) {
+    throw jikanError || e2; // if both fail, report the first problem
+  }
+}
+
+async function fetchDetail(id) {
+  let jikanError = null;
+  if (Date.now() >= jikanDownUntil) {
+    try { return await getJSON(`/anime/${id}/full`); }
+    catch (e) { if (!isServiceDown(e)) throw e; markDown(e); jikanError = e; }
+  }
+  try {
+    const media = await getAniList(id);
+    if (!media) throw jikanError || Object.assign(new Error("Not found"), { status: 404 });
+    showBackupNotice();
+    return animeFromAniList(media, id);
+  } catch (e2) {
+    throw jikanError || e2;
+  }
+}
+
+// Episode list. AniList only knows HOW MANY episodes there are, not their titles.
+async function fetchEpisodes(id, page) {
+  let jikanError = null;
+  if (Date.now() >= jikanDownUntil) {
+    try { return await getPage(`/anime/${id}/episodes?page=${page}`); }
+    catch (e) { if (!isServiceDown(e)) throw e; markDown(e); jikanError = e; }
+  }
+  if (page > 1) throw jikanError || new Error("Episode list unavailable");
+  try {
+    const media = await getAniList(id);
+    const total = media ? (media.episodes || (media.nextAiringEpisode ? media.nextAiringEpisode.episode - 1 : 0)) : 0;
+    const n = Math.min(Math.max(total || 0, 0), 300);
+    if (!n) throw jikanError || Object.assign(new Error("No episode list"), { status: 404 });
+    showBackupNotice();
+    return {
+      data: Array.from({ length: n }, (_, i) => ({ mal_id: i + 1, title: "Episode " + (i + 1), url: "", aired: null })),
+      pagination: { has_next_page: false },
+      backup: true,
+    };
+  } catch (e2) {
+    throw jikanError || e2;
+  }
+}
+
+async function fetchRandom() {
+  let jikanError = null;
+  if (Date.now() >= jikanDownUntil) {
+    try { return await getJSON("/random/anime"); }
+    catch (e) { if (!isServiceDown(e)) throw e; markDown(e); jikanError = e; }
+  }
+  try {
+    // AniList has no "random" button, so we pick a random page of popular titles
+    const data = await postAniList(CATALOG_QUERY, { page: 1 + Math.floor(Math.random() * 200), perPage: 1, sort: ["POPULARITY_DESC"] });
+    const m = data && data.Page && data.Page.media && data.Page.media[0];
+    if (jikanError || Date.now() < jikanDownUntil) showBackupNotice();
+    return m && Number.isInteger(m.idMal) ? animeFromAniListCard(m) : null;
+  } catch (e2) {
+    throw jikanError || e2;
+  }
+}
+
+async function fetchGenres() {
+  let jikanError = null;
+  if (Date.now() >= jikanDownUntil) {
+    try {
+      const genres = await getJSON("/genres/anime?filter=genres");
+      genreSource = "jikan";
+      return genres.map(g => ({ id: String(g.mal_id), name: g.name }));
+    } catch (e) { if (!isServiceDown(e)) throw e; markDown(e); jikanError = e; }
+  }
+  try {
+    const data = await postAniList("query { GenreCollection }");
+    genreSource = "anilist";
+    return ((data && data.GenreCollection) || []).filter(n => n !== "Hentai" && n !== "Ecchi").map(n => ({ id: n, name: n }));
+  } catch (e2) {
+    throw jikanError || e2;
+  }
 }
 
 // Only allow https links. This blocks "javascript:" links and other tricks in data we did not write.
@@ -577,7 +864,7 @@ async function showWatch(id) {
   window.scrollTo(0, 0);
   app.innerHTML = watchSkeleton();
   try {
-    const a = await getJSON(`/anime/${id}/full`);
+    const a = await fetchDetail(id);
     addRecent(a);
     const official = OFFICIAL[id];
     let src = "", note = "";
@@ -601,7 +888,7 @@ async function showWatch(id) {
           <button class="btn" id="saveBtn"></button>
           ${platforms || '<p class="muted" id="noLinks">No streaming links listed yet.</p>'}
         </div>
-        <p>${esc(a.synopsis || "No synopsis available.")}</p>
+        <p class="synopsis">${esc(a.synopsis || "No synopsis available.")}</p>
         <p class="muted">${esc(a.type || "")} | ${a.episodes ?? "?"} episodes | Score ${a.score ?? "N/A"}</p>
         <p class="muted" id="aniInfo" hidden></p>
         <section aria-labelledby="epTitle">
@@ -628,7 +915,7 @@ async function showWatch(id) {
     saveBtn.addEventListener("click", () => {
       const list = loadList();
       if (list[a.mal_id]) delete list[a.mal_id];
-      else list[a.mal_id] = { id: a.mal_id, title: a.title, image: a.images.jpg.image_url };
+      else list[a.mal_id] = { id: a.mal_id, title: a.title, image: posterOf(a) };
       saveList(list);
       refreshBtn();
     });
@@ -671,8 +958,8 @@ function markGenre() {
 
 async function loadGenres() {
   try {
-    const genres = await getJSON("/genres/anime?filter=genres");
-    genreBar.innerHTML = genres.map(g => `<button class="chip" data-id="${g.mal_id}" aria-pressed="false">${esc(g.name)}</button>`).join("");
+    const genres = await fetchGenres();
+    genreBar.innerHTML = genres.map(g => `<button class="chip" data-id="${esc(g.id)}" aria-pressed="false">${esc(g.name)}</button>`).join("");
     genreBar.querySelectorAll(".chip").forEach(chip => chip.addEventListener("click", () => {
       // Click the same genre again to turn the filter off
       currentGenre = currentGenre === chip.dataset.id ? null : chip.dataset.id;
@@ -711,7 +998,8 @@ async function showRandom() {
   btn.disabled = true;
   try {
     for (let tries = 0; tries < 5; tries++) {
-      const a = await getJSON("/random/anime");
+      const a = await fetchRandom();
+      if (!a) { await sleep(400); continue; } // nothing usable this time, ask again
       const adult = (a.rating || "").startsWith("Rx") || (a.explicit_genres || []).length > 0;
       if (!adult) { await showWatch(String(a.mal_id)); return; }
       await new Promise(r => setTimeout(r, 400)); // short pause to stay under Jikan's rate limit
@@ -769,7 +1057,7 @@ function closeSuggest() {
 function renderSuggest() {
   suggestBox.innerHTML = suggestItems.map((a, i) => `
     <li role="option" id="sg${i}" data-id="${a.mal_id}" aria-selected="${i === suggestIndex}">
-      <img src="${a.images.jpg.small_image_url || a.images.jpg.image_url}" alt="">
+      <img src="${safeUrl(posterOf(a, true))}" alt="">
       <span>${esc(a.title)}</span>
     </li>`).join("");
   suggestBox.hidden = !suggestItems.length;
@@ -781,7 +1069,16 @@ function renderSuggest() {
 async function fetchSuggestions(text) {
   const token = ++suggestToken;
   try {
-    const list = await getJSON(`/anime?q=${encodeURIComponent(text)}&limit=5&sfw=true`);
+    let list = null;
+    if (Date.now() >= jikanDownUntil) {
+      try { list = await getJSON(`/anime?q=${encodeURIComponent(text)}&limit=5&sfw=true`); }
+      catch (e) { if (!isServiceDown(e)) throw e; markDown(e); }
+    }
+    if (!list) { // Jikan is down: ask AniList instead
+      const data = await postAniList(CATALOG_QUERY, { page: 1, perPage: 5, search: text, sort: ["SEARCH_MATCH"] });
+      const media = (data && data.Page && data.Page.media) || [];
+      list = media.filter(m => m && Number.isInteger(m.idMal)).map(animeFromAniListCard);
+    }
     if (token !== suggestToken || searchInput.value.trim() !== text) return; // outdated answer
     suggestItems = list;
     suggestIndex = -1;
@@ -845,10 +1142,9 @@ function exportData() {
 }
 
 // Never trust a file blindly: only accept the exact shapes we expect.
-// (Images must come from MyAnimeList's CDN, because they are placed into the page.)
+// (Images must come from MyAnimeList's or AniList's image servers, because they are placed into the page.)
 const isPosInt = n => Number.isInteger(n) && n > 0;
 const isId = s => /^\d{1,9}$/.test(s);
-const IMAGE_OK = /^https:\/\/cdn\.myanimelist\.net\/[\w\/.\-]+$/;
 
 function importData(file) {
   if (!file) return;
@@ -864,7 +1160,7 @@ function importData(file) {
       // Watchlist: add new titles
       const list = loadList();
       for (const [id, item] of Object.entries(data.list || {})) {
-        if (isId(id) && item && typeof item.title === "string" && typeof item.image === "string" && IMAGE_OK.test(item.image)) {
+        if (isId(id) && item && typeof item.title === "string" && typeof item.image === "string" && SAFE_IMAGE.test(item.image)) {
           list[id] = { id: Number(id), title: item.title.slice(0, 300), image: item.image };
           nList++;
         }
