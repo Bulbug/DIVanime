@@ -19,7 +19,11 @@
     </svg>
     <span class="word"><b>DIV</b>Anime</span>
   </h1>
-  <input id="search" type="search" placeholder="Search anime" aria-label="Search anime">
+  <div class="searchbox">
+    <input id="search" type="search" placeholder="Search anime" aria-label="Search anime" autocomplete="off"
+           role="combobox" aria-expanded="false" aria-controls="suggest" aria-autocomplete="list">
+    <ul id="suggest" role="listbox" aria-label="Suggestions" hidden></ul>
+  </div>
   <button class="btn navbtn" id="randomBtn">Random</button>
   <button class="btn navbtn" id="listBtn">My Watchlist (<span id="count">0</span>)</button>
   <select id="theme" aria-label="Theme">
@@ -28,6 +32,7 @@
     <option value="sunset">Sunset</option>
   </select>
 </header>
+<div id="banner" class="banner" role="status" hidden></div>
 <nav id="tabs" aria-label="Catalog tabs">
   <button class="tab" data-tab="top" aria-pressed="true">Top</button>
   <button class="tab" data-tab="airing" aria-pressed="false">Airing now</button>
@@ -50,6 +55,7 @@
   <p class="muted" id="dataMsg" role="status"></p>
 </footer>
 
+<script src="official.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

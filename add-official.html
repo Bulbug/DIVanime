@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add official episodes | DIVAnime</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <a class="toolback" href="index.html">&larr; Back to DIVAnime</a>
+</header>
+<main class="tool">
+  <h1>Add official episodes</h1>
+  <p class="muted">Use only videos from <strong>official</strong> channels, such as Ani-One Asia, Ani-One Philippines, or Muse Asia. Make a line here, then paste it inside <code>OFFICIAL</code> in <code>official.js</code>.</p>
+
+  <div class="field">
+    <label for="mal">MyAnimeList link or ID</label>
+    <input id="mal" type="text" placeholder="https://myanimelist.net/anime/1535/Death_Note" autocomplete="off">
+  </div>
+
+  <fieldset>
+    <legend>What are you adding?</legend>
+    <label class="choice"><input type="radio" name="mode" value="single" checked> One video or playlist</label>
+    <label class="choice"><input type="radio" name="mode" value="episodes"> Episode by episode</label>
+  </fieldset>
+
+  <div class="field" id="singleBox">
+    <label for="yt">YouTube link</label>
+    <input id="yt" type="text" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+  </div>
+
+  <div class="field" id="epsBox" hidden>
+    <label for="eps">One episode per line: the number, a space, then the YouTube link</label>
+    <textarea id="eps" rows="6" placeholder="1 https://www.youtube.com/watch?v=...&#10;2 https://youtu.be/..."></textarea>
+  </div>
+
+  <button class="btn" id="makeBtn">Make my line</button>
+  <p id="msg" role="status"></p>
+
+  <section id="result" hidden>
+    <h2>Paste this inside OFFICIAL in official.js</h2>
+    <pre id="out"></pre>
+    <button class="btn small ghost" id="copyBtn">Copy</button>
+    <h2>Preview</h2>
+    <p class="muted">If the preview says &ldquo;Video unavailable&rdquo; or only offers &ldquo;Watch on YouTube&rdquo;, the owner blocked embedding or it is not available in your country. Don't add that one.</p>
+    <div id="preview"></div>
+  </section>
+</main>
+<script src="add-official.js"></script>
+</body>
+</html>

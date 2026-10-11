@@ -55,7 +55,7 @@ button.btn { border:0; cursor:pointer; font:inherit; font-weight:700; }
   header { padding:16px 5vw; gap:12px; }
   header h1 { order:1; font-size:1.35rem; }
   #theme { order:2; margin-left:auto; }
-  header input { order:3; flex:1 1 100%; width:100%; }
+  .searchbox { order:3; flex:1 1 100%; width:100%; }
   #randomBtn { order:4; }
   #listBtn { order:5; }
   .grid { gap:14px; }
@@ -100,3 +100,57 @@ button.btn { border:0; cursor:pointer; font:inherit; font-weight:700; }
 footer { padding:24px 5vw 48px; border-top:1px solid var(--line); }
 footer p { margin:0 0 12px; max-width:60ch; }
 footer .btn { margin-right:8px; }
+
+/* ---- Banner and error boxes ---- */
+.banner { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:0 5vw 16px; padding:10px 14px; border:2px solid var(--accent); border-radius:10px; background:var(--card); }
+.banner[hidden] { display:none; }
+.errorbox { max-width:480px; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--card); }
+.errorbox p { margin:0 0 12px; }
+
+/* ---- Search suggestions ---- */
+.searchbox { position:relative; width:min(320px,100%); }
+.searchbox input { width:100%; }
+#suggest { position:absolute; z-index:10; top:calc(100% + 6px); left:0; right:0; margin:0; padding:6px; list-style:none; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.25); }
+#suggest[hidden] { display:none; }
+#suggest li { display:flex; gap:10px; align-items:center; padding:6px; border-radius:8px; cursor:pointer; }
+#suggest li:hover, #suggest li[aria-selected="true"] { background:var(--line); }
+#suggest img { width:32px; height:46px; object-fit:cover; border-radius:4px; flex:none; }
+#suggest span { min-width:0; overflow-wrap:anywhere; }
+
+/* ---- Recently viewed ---- */
+#recent { margin-bottom:28px; }
+.rowhead { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.rowhead h2 { margin:0; font-size:1.1rem; }
+.recentrow { display:flex; gap:14px; overflow-x:auto; padding-bottom:8px; }
+.recentrow .card { flex:0 0 120px; }
+.recentrow .card span { font-size:.8rem; }
+
+/* ---- Helper page: add-official.html ---- */
+.toolback { color:var(--accent); text-decoration:none; font-weight:700; }
+.tool { max-width:640px; }
+.tool h1 { font-size:1.5rem; }
+.tool h2 { font-size:1.1rem; margin:24px 0 8px; }
+.tool .field { display:grid; gap:6px; margin:0 0 16px; }
+.tool .field[hidden] { display:none; }
+.tool .field input, .tool textarea { width:100%; max-width:none; }
+.tool textarea { padding:10px 14px; border-radius:12px; border:2px solid var(--line); background:var(--card); color:var(--text); font:inherit; }
+.tool fieldset { border:0; padding:0; margin:0 0 16px; }
+.tool legend { padding:0; margin-bottom:6px; }
+.tool .choice { display:flex; align-items:center; gap:8px; margin:4px 0; }
+.tool .choice input { width:auto; padding:0; margin:0; accent-color:var(--accent); }
+.tool pre { overflow-x:auto; padding:12px 14px; border:1px solid var(--line); border-radius:10px; background:var(--card); }
+.tool code { font-family:ui-monospace, Menlo, Consolas, monospace; }
+.tool textarea:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+
+/* ---- AniList episode links ---- */
+#aniEps[hidden] { display:none; }
+#aniEps h3 small { font-weight:400; }
+.aniep { display:grid; grid-template-columns:96px 1fr auto; gap:12px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:8px 12px; }
+.aniep.nothumb { grid-template-columns:1fr auto; }
+.epthumb { width:96px; height:54px; object-fit:cover; border-radius:6px; background:var(--line); }
+@media (max-width: 600px) {
+  .aniep { grid-template-columns:96px 1fr; }
+  .aniep .epbtns { grid-column:2; }
+  .aniep.nothumb { grid-template-columns:1fr; }
+  .aniep.nothumb .epbtns { grid-column:1; }
+}
