@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DIVAnime</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<script src="theme.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1 id="home" tabindex="0" role="button" aria-label="DIVAnime home">
+    <svg viewBox="0 0 48 48" width="36" height="36" aria-hidden="true">
+      <rect x="2" y="2" width="44" height="44" rx="11" fill="var(--accent)"/>
+      <rect x="12" y="12" width="3" height="24" rx="1.5" fill="var(--on-accent)" opacity=".45"/>
+      <path d="M21 14 L36 24 L21 34 Z" fill="var(--on-accent)" stroke="var(--on-accent)" stroke-width="3" stroke-linejoin="round"/>
+    </svg>
+    <span class="word"><b>DIV</b>Anime</span>
+  </h1>
+  <input id="search" type="search" placeholder="Search anime" aria-label="Search anime">
+  <button class="btn navbtn" id="listBtn">My Watchlist (<span id="count">0</span>)</button>
+  <select id="theme" aria-label="Theme">
+    <option value="night">Night</option>
+    <option value="day">Day</option>
+    <option value="sunset">Sunset</option>
+  </select>
+</header>
+<nav id="tabs" aria-label="Catalog tabs">
+  <button class="tab" data-tab="top" aria-pressed="true">Top</button>
+  <button class="tab" data-tab="airing" aria-pressed="false">Airing now</button>
+  <button class="tab" data-tab="upcoming" aria-pressed="false">Upcoming</button>
+</nav>
+<nav id="genres" aria-label="Genres"></nav>
+<main id="app"></main>
+
+<script src="script.js"></script>
+</body>
+</html>
