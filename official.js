@@ -11,6 +11,10 @@
 //   per episode:   20:   { type: "episodes", list: { 1: "YOUTUBE_ID_EP1", 2: "YOUTUBE_ID_EP2" } },
 //                  (episodes with an ID get a "Play" button in the episode list)
 //
+// Optional: add  lang: "Tagalog dub"  (or "English sub", and so on) to any entry.
+// The watch page shows it as a small label, so people know what they are about to watch:
+//   1535: { type: "video", id: "YOUTUBE_VIDEO_ID", lang: "Tagalog dub" },
+//
 // Hanapin ang ID sa link ng YouTube: youtube.com/watch?v=ITO_ANG_ID
 const OFFICIAL = {
   // Add your lines here, for example:

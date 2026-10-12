@@ -213,7 +213,7 @@ function recentHTML() {
     <div class="recentrow">${items.map(a => `
       <button class="card" data-id="${a.id}">
         <img src="${a.image}" alt="" loading="lazy">
-        <span>${esc(a.title)}</span>
+        <span>${esc(a.title)}${watchlistNote(a.id)}</span>
       </button>`).join("")}</div>
   </section>`;
 }
@@ -242,6 +242,10 @@ function esc(s) { const d = document.createElement("div"); d.textContent = s ?? 
 // (not destroy them). Back puts the same elements on screen again, with the same
 // loaded pages and scroll position, and no new API calls.
 let currentView = "catalog"; // "catalog" | "watchlist" | "watch"
+function setView(v) {
+  currentView = v;
+  document.body.dataset.view = v; // the CSS uses this (for example, the welcome banner only shows on the catalog)
+}
 let savedView = null;        // { kind, nodes, scrollY } of the list you came from
 
 function rememberView() {
@@ -252,7 +256,7 @@ function rememberView() {
 function goBack() {
   const v = savedView;
   if (v && v.kind === "catalog") {
-    currentView = "catalog";
+    setView("catalog");
     savedView = null;
     app.replaceChildren(...v.nodes);
     const moreBtn = document.getElementById("moreBtn");
@@ -273,6 +277,7 @@ const TAB_PATHS = {
   top: "/top/anime?sfw=true",
   airing: "/top/anime?filter=airing&sfw=true",
   upcoming: "/top/anime?filter=upcoming&sfw=true",
+  latest: "/watch/episodes", // recently released episodes (Jikan)
 };
 let requestId = 0; // used to ignore old responses if you click quickly
 
@@ -294,9 +299,9 @@ function buildPath(query, page) {
   let path;
   if (query) path = `/anime?q=${encodeURIComponent(query)}&sfw=true${sort}`;
   else if (currentGenre) path = `/anime?genres=${currentGenre}&sfw=true${sort || SORTS.score}`;
-  else if (sort) path = `/anime?sfw=true${TAB_STATUS[currentTab || "top"]}${sort}`;
+  else if (sort && currentTab !== "latest") path = `/anime?sfw=true${TAB_STATUS[currentTab || "top"]}${sort}`;
   else path = TAB_PATHS[currentTab || "top"];
-  return `${path}&limit=24&page=${page}`;
+  return `${path}${path.includes("?") ? "&" : "?"}limit=24&page=${page}`;
 }
 
 // LOADING SKELETONS: gray placeholder shapes shown while data loads
@@ -313,10 +318,30 @@ function watchSkeleton() {
   </div>`;
 }
 
+// LATEST EPISODES tab: the newest episodes that were released, with an "Ep N" badge on each anime.
+// It is only shown when you are not searching or filtering by genre.
+const isLatest = query => !query && !currentGenre && currentTab === "latest";
+
+// Jikan answers with { entry: {anime}, episodes: [{ title, url }] }. We turn that into cards (one per anime).
+function mapLatest(rows) {
+  const seen = new Set();
+  const cards = [];
+  (rows || []).forEach(row => {
+    const entry = row && row.entry;
+    if (!entry || !Number.isInteger(entry.mal_id) || seen.has(entry.mal_id)) return;
+    seen.add(entry.mal_id);
+    const ep = row.episodes && row.episodes[0];
+    cards.push({ ...entry, latestEp: ep ? String(ep.title || "").replace(/^Episode\s+/i, "Ep ") || ("Ep " + ep.mal_id) : "" });
+  });
+  return cards;
+}
+
 function cardHTML(a) {
   return `
     <button class="card" data-id="${a.mal_id}">
       ${safeUrl(posterOf(a)) ? `<img src="${safeUrl(posterOf(a))}" alt="" loading="lazy">` : '<div class="noposter"></div>'}
+      ${a.latestEp ? `<em class="epbadge">New: ${esc(a.latestEp)}</em>` : ""}
+      ${Number(a.score) > 0 ? `<em class="score">★ ${Number(a.score).toFixed(1)}</em>` : ""}
       <span>${esc(a.title)}</span>
     </button>`;
 }
@@ -330,7 +355,7 @@ function dropUnaired(list) {
 
 async function showCatalog(query = "", page = 1) {
   const myRequest = ++requestId;
-  currentView = "catalog";
+  setView("catalog");
   savedView = null;
   if (page === 1) app.innerHTML = skeletonGrid();
   try {
@@ -389,6 +414,7 @@ async function showCatalog(query = "", page = 1) {
 function markTab() {
   document.querySelectorAll("#tabs .tab").forEach(t =>
     t.setAttribute("aria-pressed", String(t.dataset.tab === currentTab)));
+  document.getElementById("sort").hidden = currentTab === "latest"; // sorting does not apply to the Latest list
 }
 
 // EPISODE LIST
@@ -662,8 +688,33 @@ function aniGenreName() {
   return { Suspense: "Thriller" }[name] || name;
 }
 
+// Recently aired episodes from AniList's schedule (backup for the Latest tab)
+const LATEST_QUERY = `query ($page: Int, $perPage: Int, $now: Int) {
+  Page(page: $page, perPage: $perPage) {
+    pageInfo { hasNextPage }
+    airingSchedules(airingAt_lesser: $now, sort: TIME_DESC) {
+      episode
+      media { idMal title { romaji english } coverImage { large medium } status isAdult }
+    }
+  }
+}`;
+async function getAniListLatest(page) {
+  const data = await postAniList(LATEST_QUERY, { page, perPage: 24, now: Math.floor(Date.now() / 1000) });
+  const pageData = data && data.Page;
+  const seen = new Set();
+  const cards = [];
+  ((pageData && pageData.airingSchedules) || []).forEach(row => {
+    const m = row && row.media;
+    if (!m || m.isAdult || !Number.isInteger(m.idMal) || seen.has(m.idMal)) return;
+    seen.add(m.idMal);
+    cards.push({ ...animeFromAniListCard(m), latestEp: "Ep " + row.episode });
+  });
+  return { data: cards, pagination: { has_next_page: !!(pageData && pageData.pageInfo && pageData.pageInfo.hasNextPage) } };
+}
+
 // The same list the catalog would show (tab, search, genre, sort), but asked from AniList
 async function getAniListCatalog(query, page) {
+  if (isLatest(query)) return getAniListLatest(page);
   const vars = { page, perPage: 24 };
   const tab = currentTab || "top";
   let sort;
@@ -693,7 +744,8 @@ async function fetchCatalog(query, page) {
   let jikanError = null;
   if (!aniOnly && (jikanOnly || Date.now() >= jikanDownUntil)) {
     try {
-      const res = await getPage(buildPath(query, page));
+      let res = await getPage(buildPath(query, page));
+      if (isLatest(query)) res = { ...res, data: mapLatest(res.data) };
       if (page === 1) catalogSource = "jikan";
       return res;
     } catch (e) {
@@ -819,7 +871,7 @@ async function loadAniList(id, jikanAnime) {
       info.push(`Episode ${next.episode} airs ${when} (${timeUntil(next.airingAt * 1000 - Date.now())})`);
     }
     const infoBox = document.getElementById("aniInfo");
-    if (infoBox && info.length) { infoBox.textContent = info.join(" | "); infoBox.hidden = false; }
+    if (infoBox && info.length) { infoBox.innerHTML = info.map(x => `<span>${esc(x)}</span>`).join(""); infoBox.hidden = false; }
 
     // 1. Extra "Watch on ..." buttons (skip platforms we already show from Jikan)
     const box = document.getElementById("platformsBox");
@@ -860,7 +912,7 @@ async function loadAniList(id, jikanAnime) {
 
 async function showWatch(id) {
   rememberView();
-  currentView = "watch";
+  setView("watch");
   window.scrollTo(0, 0);
   app.innerHTML = watchSkeleton();
   try {
@@ -878,19 +930,30 @@ async function showWatch(id) {
     }
     const platforms = (a.streaming || []).filter(s => safeUrl(s.url))
       .map(s => `<a class="btn" href="${safeUrl(s.url)}" target="_blank" rel="noopener">Watch on ${esc(s.name)}</a>`).join("");
+    const poster = safeUrl(posterOf(a));
+    // official.js can add a label like "Tagalog dub" or "English sub" (lang) to an anime's official video
+    const facts = [a.type, `${a.episodes ?? "?"} episodes`, `Score ${a.score ?? "N/A"}`, official && official.lang].filter(Boolean);
     app.innerHTML = `
-      <button class="back" id="back">&larr; Back</button>
+      <button class="back" id="back">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back
+      </button>
       <section class="watch">
         <h2>${esc(a.title)}</h2>
         <div id="playerBox">${src ? playerHTML(src, "Official video") : ""}</div>
         <p class="muted" id="playerNote">${esc(note)}</p>
-        <div id="platformsBox">
-          <button class="btn" id="saveBtn"></button>
-          ${platforms || '<p class="muted" id="noLinks">No streaming links listed yet.</p>'}
+        <div class="watchcols">
+          ${poster ? `<img class="watchposter" src="${poster}" alt="">` : ""}
+          <div class="watchinfo">
+            <ul class="facts">${facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul>
+            <p id="aniInfo" hidden></p>
+            <div id="platformsBox">
+              <button class="btn" id="saveBtn"></button>
+              ${platforms || '<p class="muted" id="noLinks">No streaming links listed yet.</p>'}
+            </div>
+            <p class="synopsis">${esc(a.synopsis || "No synopsis available.")}</p>
+          </div>
         </div>
-        <p class="synopsis">${esc(a.synopsis || "No synopsis available.")}</p>
-        <p class="muted">${esc(a.type || "")} | ${a.episodes ?? "?"} episodes | Score ${a.score ?? "N/A"}</p>
-        <p class="muted" id="aniInfo" hidden></p>
         <section aria-labelledby="epTitle">
           <h3 id="epTitle">Episodes</h3>
           <div id="epProgress" class="epprogress"></div>
@@ -932,7 +995,7 @@ async function showWatch(id) {
 }
 
 function showWatchlist() {
-  currentView = "watchlist";
+  setView("watchlist");
   savedView = null;
   const items = Object.values(loadList());
   if (!items.length) {
@@ -1198,9 +1261,10 @@ document.getElementById("importFile").addEventListener("change", e => {
   e.target.value = ""; // lets you pick the same file again later
 });
 
-// THEME PICKER: Night / Day / Sunset. The colors live in style.css as CSS variables.
+// THEME PICKER: Midnight / Abyss / Light. The colors live in style.css as CSS variables.
 const themeSelect = document.getElementById("theme");
-themeSelect.value = document.documentElement.getAttribute("data-theme") || "night";
+themeSelect.value = document.documentElement.getAttribute("data-theme") || "midnight";
+if (themeSelect.value !== document.documentElement.getAttribute("data-theme")) themeSelect.value = "midnight"; // unknown saved name
 themeSelect.addEventListener("change", () => {
   document.documentElement.setAttribute("data-theme", themeSelect.value);
   try { localStorage.setItem("divanime-theme", themeSelect.value); } catch (e) { /* ignore */ }

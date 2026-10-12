@@ -35,13 +35,20 @@ function parseYouTube(text) {
   return null;
 }
 
-// Builds the text to paste into official.js
-function buildSingleLine(mal, yt) {
-  return `${mal}: { type: "${yt.type}", id: "${yt.id}" },`;
+// The optional label ("Tagalog dub"): keep only safe characters, so it cannot break the line
+function cleanLang(text) {
+  return String(text || "").replace(/[\u0000-\u001f"'\\`<>]/g, "").trim().slice(0, 30);
 }
-function buildEpisodesLine(mal, eps) { // eps: [[number, id], ...]
+
+// Builds the text to paste into official.js
+function buildSingleLine(mal, yt, lang) {
+  const label = cleanLang(lang);
+  return `${mal}: { type: "${yt.type}", id: "${yt.id}"${label ? `, lang: "${label}"` : ""} },`;
+}
+function buildEpisodesLine(mal, eps, lang) { // eps: [[number, id], ...]
+  const label = cleanLang(lang);
   const rows = eps.map(([n, id]) => `    ${n}: "${id}",`).join("\n");
-  return `${mal}: { type: "episodes", list: {\n${rows}\n  } },`;
+  return `${mal}: { type: "episodes",${label ? ` lang: "${label}",` : ""} list: {\n${rows}\n  } },`;
 }
 
 // Reads the textarea. Returns { eps: [[n, id], ...], bad: [line numbers that could not be read] }
@@ -84,13 +91,13 @@ if (typeof document !== "undefined" && document.getElementById("makeBtn")) {
     if (!episodes) {
       const yt = parseYouTube($("yt").value);
       if (!yt) { msg.textContent = "That doesn't look like a YouTube video or playlist link."; return; }
-      line = buildSingleLine(mal, yt);
+      line = buildSingleLine(mal, yt, $("lang").value);
       first = yt;
     } else {
       const { eps, bad } = parseEpisodeLines($("eps").value);
       if (bad.length) { msg.textContent = "I couldn't read line " + bad.join(", ") + ". Use: number, space, link."; return; }
       if (!eps.length) { msg.textContent = "Add at least one episode line."; return; }
-      line = buildEpisodesLine(mal, eps);
+      line = buildEpisodesLine(mal, eps, $("lang").value);
       first = { type: "video", id: eps[0][1] };
     }
 

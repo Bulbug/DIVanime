@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Add official episodes | DIVAnime</title>
+<meta name="theme-color" content="#050a1c">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <script src="theme.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Sora:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -35,6 +37,11 @@
   <div class="field" id="epsBox" hidden>
     <label for="eps">One episode per line: the number, a space, then the YouTube link</label>
     <textarea id="eps" rows="6" placeholder="1 https://www.youtube.com/watch?v=...&#10;2 https://youtu.be/..."></textarea>
+  </div>
+
+  <div class="field">
+    <label for="lang">Label to show (optional)</label>
+    <input id="lang" type="text" placeholder="Tagalog dub, English sub, ..." maxlength="30" autocomplete="off">
   </div>
 
   <button class="btn" id="makeBtn">Make my line</button>

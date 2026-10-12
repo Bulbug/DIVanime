@@ -20,6 +20,7 @@ DIVAnime only links to and embeds **legal** sources: official trailers, official
 - "Load more" button (pagination), 24 titles at a time
 - Search by title, with suggestions while you type (mouse or keyboard: arrows, Enter, Escape)
 - Genre filter buttons (click again to clear)
+- **Latest episodes** tab: the newest released episodes, each with a "New: Ep N" badge (backup: AniList's airing schedule)
 - Watch page with synopsis, type, episode count, and score
 - Episode list on every watch page (title, air date, link to details), with a "Show more episodes" button
 - Official trailer embed and "Watch on ..." buttons for legal streaming platforms (from Jikan and AniList)
@@ -27,13 +28,13 @@ DIVAnime only links to and embeds **legal** sources: official trailers, official
 - "Watch episodes on official platforms": links to individual episodes on licensed platforms such as Crunchyroll, from AniList (not every anime has them)
 - Continue watching: the last episode you opened is marked, with a "Jump to it" button (also shown in your watchlist)
 - Watched checkboxes with a progress bar ("Watched 5 of 24"), plus "Mark loaded as watched" and "Clear" buttons
-- "Recently viewed" row above the catalog (your last 8 anime, with a Clear button)
+- "Recently viewed" row above the catalog (your last 8 anime, with a Clear button and where you left off, for example "Last opened: Ep 4")
 - Loading skeletons (gray placeholder cards) while data loads
 - Export / import your watchlist and progress as a JSON file (footer buttons), to back up or move to another device
 - Friendly error messages with a "Try again" button, and an offline banner (it retries by itself when you reconnect)
 - **Random** button opens a random (non-adult) anime
 - Back button returns you to the same place in the list (loaded pages and scroll position are kept)
-- Custom logo and three themes (Night, Day, Sunset) that you can switch in the header, saved in your browser
+- Custom logo and three themes (Midnight, Abyss, Light) that you can switch in the header, saved in your browser
 - Watchlist saved in your browser (`localStorage`), so it stays after refresh
 
 ## Getting started
@@ -90,6 +91,7 @@ const OFFICIAL = {
 };
 ```
 
+- Add `lang: "Tagalog dub"` (or "English sub") to any entry to show a small label on the watch page. The helper page has a box for it.
 - Episodes in an `episodes` entry get a **Play** button in the episode list that loads that video in the player.
 - Anime without an entry show the official trailer and "Watch on ..." links to licensed platforms.
 
